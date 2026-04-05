@@ -767,9 +767,35 @@ async def arc_get_rc_job_status(params: GetRCJobInput) -> str:
 # Entry point
 # ---------------------------------------------------------------------------
 
+import contextlib
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
+
+async def health(request):
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "arc-mcp",
+            "mcp_endpoint": "/mcp",
+        }
+    )
+
+@contextlib.asynccontextmanager
+async def lifespan(app: Starlette):
+    async with mcp.session_manager.run():
+        yield
+
+app = Starlette(
+    routes=[
+        Route("/", endpoint=health),
+        Mount("/mcp", app=mcp.streamable_http_app()),
+    ],
+    lifespan=lifespan,
+)
+
 if __name__ == "__main__":
-    missing = [v for v in ["ARC_BASE_URL", "ARC_USERNAME", "ARC_PASSWORD"] if not os.getenv(v)]
-    if missing:
-        print(f"⚠️  Missing env vars: {', '.join(missing)}")
-        print("    Set them before running or the server will start but all calls will fail auth.\n")
-    mcp.run()
+    import uvicorn
+    import os
+    port = int(os.getenv("PORT", "10000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
